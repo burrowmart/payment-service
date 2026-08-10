@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# payment-service chart values
+#
+# All keys must be nested under "base-service:" so Helm routes them to the
+# base-service subchart.  Override individual keys at deploy time with:
+#   helm upgrade --set base-service.image.tag=sha-abc1234 ...
+# ---------------------------------------------------------------------------
+base-service:
+
+  fullnameOverride: "payment-service"
+  nameOverride: "payment-service"
+
+  image:
+    repository: ghcr.io/archtenet/payment-service
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  replicaCount: 2
+
+  # ---------------------------------------------------------------------------
+  # Application container — non-sensitive runtime config only.
+  # Secrets (MONGO_URI, RABBITMQ_URL, REDIS_URL, COGNITO_*) come from AWS
+  # Secrets Manager via External Secrets Operator.
+  # ---------------------------------------------------------------------------
+  app:
+    port: 3000
+    env:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      PORT: "3000"
+      RABBITMQ_QUEUE: payment-service.queue
+      OTEL_SERVICE_NAME: payment-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318"
+      COGNITO_REGION: us-east-1
+      # PSP simulation: set >0 to auto-fail charges above this amount in cents; 0 = disabled
+      FAIL_PAYMENT_OVER_AMOUNT: "0"
+
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  envoy:
+    image: "envoyproxy/envoy:v1.29-latest"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  service:
+    port: 80
+
+  ingress:
+    host: payment-service.internal.archtenet.com
+    path: /api/v1/payments
+    pathType: Prefix
+
+  opaAddress: "opa-pdp.opa-system.svc.cluster.local:9191"
+
+  secretsManagerPath: "/prod/payment-service"
+
+  irsaRoleArn: "arn:aws:iam::ACCOUNT_ID:role/payment-service-irsa"
+
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    minAvailable: 1

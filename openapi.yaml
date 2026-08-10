@@ -1,0 +1,57 @@
+openapi: 3.0.0
+paths:
+  /health:
+    get:
+      operationId: HealthController_check
+      parameters: []
+      responses:
+        '200':
+          description: ''
+      tags:
+        - health
+  /payments:
+    get:
+      operationId: PaymentsController_findAll
+      parameters:
+        - name: orderId
+          required: false
+          in: query
+          description: Filter by orderId
+          schema:
+            type: string
+        - name: userId
+          required: false
+          in: query
+          description: Filter by userId (email)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated payment list
+      tags:
+        - payments
+  /payments/{id}:
+    get:
+      operationId: PaymentsController_findOne
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment found
+        '404':
+          description: Payment not found
+      tags:
+        - payments
+info:
+  title: User Service API
+  description: Manages user profiles and OPAL attribute data. Email is the primary key.
+  version: 0.1.0
+  contact: {}
+tags: []
+servers: []
+components:
+  schemas: {}
