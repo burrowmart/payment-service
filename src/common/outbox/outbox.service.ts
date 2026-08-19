@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type { ClientSession } from 'mongoose';
 import { randomUUID } from 'crypto';
+import { context, propagation } from '@opentelemetry/api';
 import type { MessageEnvelope } from '@demo/contracts';
 import { getCorrelationId } from '../correlation/correlation.context';
 import { OutboxEntity, OutboxDocument } from './schemas/outbox.schema';
@@ -33,8 +34,23 @@ export class OutboxService {
       correlationId:
         envelope.correlationId || getCorrelationId() || randomUUID(),
     };
+    // Capture the live trace context now -- writeInTx is the only point in
+    // the outbox flow that still runs inside the original request's async
+    // context. OutboxPublisherService re-attaches this as an AMQP header
+    // when it actually publishes, later and from a different async context
+    // (see the field comment on OutboxEntity.traceparent).
+    const carrier: Record<string, string> = {};
+    propagation.inject(context.active(), carrier);
     await this.model.create(
-      [{ envelope: enriched, exchange, routingKey, published: false }],
+      [
+        {
+          envelope: enriched,
+          exchange,
+          routingKey,
+          published: false,
+          traceparent: carrier.traceparent,
+        },
+      ],
       { session },
     );
   }

@@ -20,9 +20,12 @@ import type {
   RefundPaymentPayload,
   PaymentSucceededPayload,
   PaymentFailedPayload,
+  PaymentSucceededEventPayload,
+  PaymentFailedEventPayload,
 } from '@demo/contracts';
 import { OutboxService } from '../common/outbox/outbox.service';
 import { IdempotentConsumerService } from '../common/outbox/idempotent-consumer.service';
+import { context, propagation } from '@opentelemetry/api';
 import { correlationStorage } from '../common/correlation/correlation.context';
 import { PaymentEntity, PaymentDocument } from '../payments/schemas/payment.schema';
 import { PaymentsRepository } from '../payments/payments.repository';
@@ -117,11 +120,12 @@ export class PaymentSagaHandler
           session,
         );
 
+        const reason = forceFail ? 'forceFail flag set' : `Amount ${amount} exceeds limit ${failThreshold}`;
+
         let replyEnvelope: MessageEnvelope;
         let replyRoutingKey: string;
 
         if (shouldFail) {
-          const reason = forceFail ? 'forceFail flag set' : `Amount ${amount} exceeds limit ${failThreshold}`;
           replyEnvelope = createEnvelope<PaymentFailedPayload>(
             ROUTING_KEYS.PAYMENT_FAILED,
             { sagaId, orderId, reason },
@@ -142,7 +146,25 @@ export class PaymentSagaHandler
           { session },
         );
 
+        // Private reply to the order-orchestrator (drives saga state transitions)
         await this.outbox.writeInTx(session, replyEnvelope, EXCHANGES.SAGA_REPLIES, replyRoutingKey);
+
+        // Public choreography event for notification-service (and any other
+        // future subscriber) — same transaction, so it's exactly-once with the
+        // orchestrator reply above. Not emitted from processRefund: a refund is
+        // a saga compensation, not a new "payment succeeded" business fact.
+        const notifyEnvelope = shouldFail
+          ? createEnvelope<PaymentFailedEventPayload>(
+              ROUTING_KEYS.PAYMENT_FAILED,
+              { sagaId, orderId, userId, reason },
+              { sagaId, step, correlationId: envelope.correlationId },
+            )
+          : createEnvelope<PaymentSucceededEventPayload>(
+              ROUTING_KEYS.PAYMENT_SUCCEEDED,
+              { sagaId, orderId, userId, paymentId: String(payment._id) },
+              { sagaId, step, correlationId: envelope.correlationId },
+            );
+        await this.outbox.writeInTx(session, notifyEnvelope, EXCHANGES.DOMAIN_EVENTS, replyRoutingKey);
       });
     } catch (err: any) {
       if (err?.code === 11000) {
@@ -264,13 +286,14 @@ export class PaymentSagaHandler
         // Run in the correlation ALS context so this handler's (and mixin-emitted) log
         // lines carry the originating request's cf-ray/x-correlation-id — the AMQP
         // consume path otherwise never enters an ALS context (unlike HTTP requests).
-        await correlationStorage.run({ correlationId: envelope.correlationId }, async () => {
+        const traceCtx = propagation.extract(context.active(), msg.properties.headers ?? {});
+        await context.with(traceCtx, () => correlationStorage.run({ correlationId: envelope.correlationId }, async () => {
           this.logger.log(
             { correlationId: envelope.correlationId, sagaId: envelope.sagaId },
             'charge command received',
           );
           await this.handleCharge(envelope);
-        });
+        }));
         this.chargeCh!.ack(msg);
       } catch (err) {
         this.logger.error({ err }, 'charge handler error — nacking');
@@ -284,13 +307,14 @@ export class PaymentSagaHandler
       if (!msg) return;
       const envelope: MessageEnvelope<RefundPaymentPayload> = JSON.parse(msg.content.toString());
       try {
-        await correlationStorage.run({ correlationId: envelope.correlationId }, async () => {
+        const traceCtx = propagation.extract(context.active(), msg.properties.headers ?? {});
+        await context.with(traceCtx, () => correlationStorage.run({ correlationId: envelope.correlationId }, async () => {
           this.logger.log(
             { correlationId: envelope.correlationId, sagaId: envelope.sagaId },
             'refund-payment command received',
           );
           await this.handleRefundPayment(envelope);
-        });
+        }));
         this.refundCh!.ack(msg);
       } catch (err) {
         this.logger.error({ err }, 'refund-payment handler error — nacking');

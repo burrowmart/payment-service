@@ -209,6 +209,13 @@ export class OutboxPublisherService
           correlationId: doc.envelope.correlationId,
           contentType: 'application/json',
           persistent: true,
+          // Re-attach the trace context captured when this row was written
+          // (OutboxService.writeInTx, see OutboxEntity.traceparent's doc
+          // comment) -- this publish runs from a MongoDB change-stream
+          // callback with no span of its own, so without this header the
+          // consuming service's amqplib auto-instrumentation has nothing to
+          // extract and the RabbitMQ hop drops out of the request's trace.
+          headers: doc.traceparent ? { traceparent: doc.traceparent } : undefined,
         },
         (err) => (err ? reject(err) : resolve()),
       ),
