@@ -5,8 +5,10 @@
  *   - MongoDB must be reachable at MONGO_URI (or set env before running).
  *   - Run from the user-service directory: npm run generate:openapi
  *
- * The emitted openapi.yaml is committed to the repo and consumed by the
- * contracts package client generator.
+ * The emitted openapi.yaml is committed to the repo as the as-built view of
+ * what this service actually serves. It is NOT the client-generator input:
+ * contracts' generate-clients.ts reads the hand-authored design specs in
+ * contracts/openapi/, never a service's own file — keep the two in agreement.
  */
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
