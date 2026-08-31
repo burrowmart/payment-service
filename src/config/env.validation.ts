@@ -6,16 +6,6 @@ export const envValidationSchema = Joi.object({
   MONGO_URI: Joi.string().required(),
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   AUTH_DISABLED: Joi.string().valid('true', 'false').default('false'),
-  COGNITO_ISSUER: Joi.string().when('AUTH_DISABLED', {
-    is: 'true',
-    then: Joi.string().optional().allow(''),
-    otherwise: Joi.string().required(),
-  }),
-  COGNITO_AUDIENCE: Joi.string().when('AUTH_DISABLED', {
-    is: 'true',
-    then: Joi.string().optional().allow(''),
-    otherwise: Joi.string().required(),
-  }),
   OTEL_EXPORTER_OTLP_ENDPOINT: Joi.string().uri().optional(),
   OTEL_SERVICE_NAME: Joi.string().default(SERVICE_NAME),
   RABBITMQ_URL: Joi.string().default('amqp://guest:guest@localhost:5672'),

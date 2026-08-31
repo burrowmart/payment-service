@@ -19,7 +19,7 @@ base-service:
 
   # ---------------------------------------------------------------------------
   # Application container — non-sensitive runtime config only.
-  # Secrets (MONGO_URI, RABBITMQ_URL, REDIS_URL, COGNITO_*) come from AWS
+  # Secrets (MONGO_URI, RABBITMQ_URL, REDIS_URL) come from AWS
   # Secrets Manager via External Secrets Operator.
   # ---------------------------------------------------------------------------
   app:
@@ -36,7 +36,6 @@ base-service:
       # the HTTP receiver port silently drops every span.
       OTEL_SERVICE_NAME: payment-service
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
-      COGNITO_REGION: us-east-1
       # PSP simulation: set >0 to auto-fail charges above this amount in cents; 0 = disabled
       FAIL_PAYMENT_OVER_AMOUNT: "0"
 
